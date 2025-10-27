@@ -2,7 +2,7 @@ from setuptools import setup
 from glob import glob
 import os
 
-package_name = 'maze_nav'
+package_name = 'maze_nav_system'
 
 setup(
     name=package_name,
@@ -19,10 +19,10 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='tron',
-    maintainer_email='tron@tron.local',
-    description='Maze navigation with RRT* and pure pursuit',
-    license='Apache License 2.0',
+    maintainer='Kenneth Martinez',
+    maintainer_email='kennethaldahir.martinezmoreno@ontariotechu.net',
+    description='Maze navigation with opencv',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [

@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>maze_nav</name>
+  <name>maze_nav_system</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="tron@todo.todo">tron</maintainer>
-  <license>TODO: License declaration</license>
+  <maintainer email="kennethaldahir.martinezmoreno@ontariotechu.net">Kenneth Martinez</maintainer>
+  <license>MIT</license>
 
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>
