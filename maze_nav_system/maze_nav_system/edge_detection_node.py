@@ -36,7 +36,7 @@ class EdgeDetection(Node):
         # Subscriber
         self.subscription = self.create_subscription(
             Image,
-            '/image_raw',
+            'camera/image_raw',
             self.listener_callback,
             10)
         
