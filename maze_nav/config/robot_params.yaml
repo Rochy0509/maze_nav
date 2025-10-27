@@ -1,0 +1,21 @@
+# ROS2 parameters must be under node name and ros__parameters
+swerve_controller:
+  ros__parameters:
+    robot:
+      wheel_base_m: 0.146
+      wheel_radius_m: 0.031
+      robot_radius_m: 0.15
+      
+    swerve:
+      max_steer_angle_deg: 90.0
+      max_steer_rate_deg_s: 180.0
+      
+    drive:
+      max_linear_speed_ms: 0.5
+      max_angular_speed_rads: 2.0
+
+maze_navigator:
+  ros__parameters:
+    robot:
+      wheel_base_m: 0.146
+      wheel_radius_m: 0.031
