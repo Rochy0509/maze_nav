@@ -26,10 +26,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'maze_planner = maze_nav.maze_planner:main',
-            'swerve_controller = maze_nav.swerve_controller:main',
-            'send_goal = maze_nav.send_goal:main',
-	    'arduino_swerve_bridge = maze_nav.arduino_swerve_bridge:main',
+           'edge_node = maze_nav.edge_detection_node:main',
         ],
     },
 )

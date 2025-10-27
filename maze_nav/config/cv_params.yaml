@@ -1,0 +1,10 @@
+edge_detection_node:
+  ros__parameters:
+    gaussian_k: [5, 5]
+    sigmaX: 1.0
+    lower_thresh: 50
+    upper_thresh: 150
+    hough_threshold: 30
+    min_line_length: 50
+    max_line_gap: 30
+    wall_bottom_region: 0.7
