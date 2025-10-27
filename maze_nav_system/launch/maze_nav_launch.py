@@ -23,7 +23,7 @@ def generate_launch_description():
         
         # Edge Detection Node
         Node(
-            package='maze_nav',
+            package='maze_nav_system',
             executable='edge_node',
             name='edge_detection_node',
             parameters=[
