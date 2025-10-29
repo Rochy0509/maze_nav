@@ -20,12 +20,12 @@ class NavigationNode(Node):
         )
 
         # State machine states
-        self.state = 'FIND_GAP'  # Start by finding the first gap
-        self.turn_count = 0
+        self.state = 'MOVE_FORWARD_1'  # Start with first forward movement
+        self.turn_count = 0  # Track number of turns
         self.moving_forward = False
         self.target_angle = 0.0
         self.start_time = 0.0
-        self.forward_duration = 0.0
+        self.forward_duration = 3.0  # Default forward duration (seconds)
         self.turn_start_time = 0.0
         
         # TOF sensor data
@@ -33,9 +33,10 @@ class NavigationNode(Node):
         self.right_dist = float('inf')
         self.left_dist = float('inf')
         
-        # Edge detection data
+        # Square detection data (for package detection)
         self.offset_px = 0.0
-        self.alignment = "CENTER"
+        self.alignment = "NONE"
+        self.square_detected = False  # Flag when square is detected
         
         # IMU data
         self.current_yaw = 0.0
@@ -55,15 +56,11 @@ class NavigationNode(Node):
         self.initial_escape_yaw = 0.0  # Yaw when escape started
         self.escape_state = 'NONE'  # NONE, DETECTED, ESCAPING, COMPLETED
         
-        # Navigation history for path tracking
-        self.nav_history = []  # Store navigation decisions
-        self.max_history_length = 20  # Limit history size
-        
         # Robot parameters
         self.linear_speed = 0.2  # m/s
         self.angular_speed = 0.5  # rad/s
         self.reverse_speed = -0.15  # m/s (negative for reverse)
-        self.min_gap_distance = 0.3  # meters
+        self.min_gap_distance = 0.03  # 30mm threshold for gap detection
         self.center_tolerance = 20  # pixels for alignment
         self.wall_distance_setpoint = 0.08  # Target distance from wall (80mm)
         self.wall_follow_kp = 1.0  # Proportional gain for wall following
@@ -90,9 +87,9 @@ class NavigationNode(Node):
         self.sub_tof_1 = self.create_subscription(Range, '/tof/sensor_1', self.tof_1_callback, qos)
         self.sub_tof_2 = self.create_subscription(Range, '/tof/sensor_2', self.tof_2_callback, qos)
         
-        # Edge detection
-        self.sub_offset = self.create_subscription(Float32, '/edge_detection/offset_px', self.offset_callback, qos)
-        self.sub_alignment = self.create_subscription(String, '/edge_detection/alignment', self.alignment_callback, qos)
+        # Square detection (using the new topic)
+        self.sub_offset = self.create_subscription(Float32, '/square_detection/offset_px', self.offset_callback, qos)
+        self.sub_alignment = self.create_subscription(String, '/square_detection/alignment', self.alignment_callback, qos)
         
         # IMU for precise turning
         self.sub_imu = self.create_subscription(Imu, '/imu/data', self.imu_callback, qos)
@@ -122,6 +119,11 @@ class NavigationNode(Node):
 
     def alignment_callback(self, msg):
         self.alignment = msg.data
+        # Check if square is detected
+        if self.alignment != "NONE":
+            self.square_detected = True
+        else:
+            self.square_detected = False
 
     def imu_callback(self, msg):
         orientation = msg.orientation
@@ -169,54 +171,6 @@ class NavigationNode(Node):
         while diff < -math.pi:
             diff += 2 * math.pi
         return diff
-
-    def calculate_wall_follow_correction(self):
-        """Calculate lateral correction based on TOF sensors for wall following."""
-        correction = 0.0
-        
-        # Use right and left TOF sensors to stay centered
-        if self.right_dist != float('inf') and self.left_dist != float('inf'):
-            # Calculate desired distance from each wall (centered)
-            desired_right = (self.right_dist + self.left_dist) / 2.0
-            desired_left = desired_right
-            
-            # Calculate error from desired center position
-            right_error = self.right_dist - desired_right
-            left_error = self.left_dist - desired_left
-            
-            # Use the more reliable side (whichever is closer to the wall)
-            if self.right_dist < self.left_dist:
-                # Following right wall
-                error = self.right_dist - self.wall_distance_setpoint
-                correction = self.wall_follow_kp * error
-            else:
-                # Following left wall
-                error = self.wall_distance_setpoint - self.left_dist
-                correction = -self.wall_follow_kp * error
-        elif self.right_dist != float('inf'):
-            # Only right sensor available - follow right wall
-            error = self.right_dist - self.wall_distance_setpoint
-            correction = self.wall_follow_kp * error
-        elif self.left_dist != float('inf'):
-            # Only left sensor available - follow left wall
-            error = self.wall_distance_setpoint - self.left_dist
-            correction = -self.wall_follow_kp * error
-        
-        # Limit the correction to prevent excessive steering
-        correction = max(-0.5, min(0.5, correction))
-        return correction
-
-    def calculate_edge_center_correction(self):
-        """Calculate correction based on edge detection alignment."""
-        correction = 0.0
-        
-        if self.alignment == "LEFT":
-            correction = -0.1  # Turn right
-        elif self.alignment == "RIGHT":
-            correction = 0.1   # Turn left
-        # If CENTER, no correction needed
-        
-        return correction
 
     def publish_status(self):
         """Publish current navigation status."""
@@ -323,29 +277,22 @@ class NavigationNode(Node):
                     self.task_completed = True
                     self.get_logger().info("PACKAGE FOUND - TASK COMPLETED")
             else:
-                # Normal navigation
-                if self.state == 'FIND_GAP':
-                    # Move forward while maintaining center position
-                    if right_dist > self.min_gap_distance and front_dist > 0.5:
-                        cmd_vel.linear.x = self.linear_speed
-                        # Apply corrections for centering
-                        wall_correction = self.calculate_wall_follow_correction()
-                        edge_correction = self.calculate_edge_center_correction()
-                        cmd_vel.angular.z = wall_correction + edge_correction * 0.5
-                        self.get_logger().info("MOVING FORWARD TO FIND GAP WITH CENTERING")
-                    elif right_dist <= self.min_gap_distance:
-                        # Gap found, prepare to turn right
-                        self.state = 'TURN_RIGHT'
+                # Navigation sequence: Forward, Right, Forward, Right, Forward, Right, then Left when gap detected
+                if self.state == 'MOVE_FORWARD_1':
+                    # Move forward for first segment
+                    cmd_vel.linear.x = self.linear_speed
+                    cmd_vel.angular.z = 0.0
+                    self.get_logger().info("MOVING FORWARD - SEGMENT 1")
+                    
+                    # Check if we've been moving long enough
+                    elapsed = time.time() - self.start_time
+                    if elapsed > self.forward_duration:
+                        self.state = 'TURN_RIGHT_1'
                         self.initial_yaw = self.current_yaw
                         self.turn_start_time = time.time()
-                        self.get_logger().info("GAP DETECTED ON RIGHT, PREPARING TO TURN")
-                    else:
-                        # Obstacle ahead, need to handle
-                        cmd_vel.linear.x = 0.0
-                        cmd_vel.angular.z = 0.0
-                        self.get_logger().info("OBSTACLE AHEAD WHILE FINDING GAP")
+                        self.get_logger().info("COMPLETED FORWARD 1 - PREPARING TO TURN RIGHT")
 
-                elif self.state == 'TURN_RIGHT':
+                elif self.state == 'TURN_RIGHT_1':
                     # Turn right using IMU feedback for precise 90-degree turn
                     target_yaw = self.initial_yaw - math.pi/2  # 90 degrees right
                     yaw_diff = self.get_yaw_difference(target_yaw, self.current_yaw)
@@ -353,52 +300,94 @@ class NavigationNode(Node):
                     if abs(yaw_diff) > 0.1:  # 0.1 rad = ~5.7 degrees tolerance
                         cmd_vel.angular.z = -min(self.angular_speed, max(-self.angular_speed, yaw_diff * 2))
                         cmd_vel.linear.x = 0.0
-                        self.get_logger().info(f"TURNING RIGHT: {math.degrees(yaw_diff):.1f}° remaining")
+                        self.get_logger().info(f"TURNING RIGHT 1: {math.degrees(yaw_diff):.1f}° remaining")
                     else:
-                        self.turn_count += 1
-                        self.get_logger().info(f"TURNED RIGHT. TURN COUNT: {self.turn_count}")
-                        
-                        if self.turn_count == 3:
-                            # After 3rd turn, look for gap on right again
-                            self.state = 'FIND_GAP_RIGHT'
-                        else:
-                            # Continue to next segment
-                            self.state = 'MOVE_FORWARD'
-                            self.start_time = time.time()
-                            self.forward_duration = 3.0
-                        self.get_logger().info(f"NEW STATE: {self.state}")
+                        self.turn_count = 1
+                        self.get_logger().info(f"COMPLETED RIGHT TURN 1. TURN COUNT: {self.turn_count}")
+                        self.state = 'MOVE_FORWARD_2'
+                        self.start_time = time.time()
+                        self.get_logger().info("MOVING FORWARD - SEGMENT 2")
 
-                elif self.state == 'MOVE_FORWARD':
-                    # Move forward for a set duration while centering
+                elif self.state == 'MOVE_FORWARD_2':
+                    # Move forward for second segment
+                    cmd_vel.linear.x = self.linear_speed
+                    cmd_vel.angular.z = 0.0
+                    self.get_logger().info("MOVING FORWARD - SEGMENT 2")
+                    
                     elapsed = time.time() - self.start_time
-                    if elapsed < self.forward_duration:
-                        cmd_vel.linear.x = self.linear_speed
-                        wall_correction = self.calculate_wall_follow_correction()
-                        edge_correction = self.calculate_edge_center_correction()
-                        cmd_vel.angular.z = wall_correction + edge_correction * 0.5
-                        self.get_logger().info("MOVING FORWARD IN CORRIDOR WITH CENTERING")
-                    else:
-                        # Duration complete, look for next decision point
-                        self.state = 'FIND_GAP'
+                    if elapsed > self.forward_duration:
+                        self.state = 'TURN_RIGHT_2'
+                        self.initial_yaw = self.current_yaw
+                        self.turn_start_time = time.time()
+                        self.get_logger().info("COMPLETED FORWARD 2 - PREPARING TO TURN RIGHT")
 
-                elif self.state == 'FIND_GAP_RIGHT':
-                    # After 3rd turn, look for gap in right wall
-                    if right_dist > self.min_gap_distance and front_dist > 0.5:
-                        cmd_vel.linear.x = self.linear_speed
-                        wall_correction = self.calculate_wall_follow_correction()
-                        edge_correction = self.calculate_edge_center_correction()
-                        cmd_vel.angular.z = wall_correction + edge_correction * 0.5
-                        self.get_logger().info("MOVING FORWARD TOWARD RIGHT GAP WITH CENTERING")
-                    elif right_dist <= self.min_gap_distance:
-                        # Found gap on right, turn right again
+                elif self.state == 'TURN_RIGHT_2':
+                    # Turn right using IMU feedback for precise 90-degree turn
+                    target_yaw = self.initial_yaw - math.pi/2  # 90 degrees right
+                    yaw_diff = self.get_yaw_difference(target_yaw, self.current_yaw)
+                    
+                    if abs(yaw_diff) > 0.1:
+                        cmd_vel.angular.z = -min(self.angular_speed, max(-self.angular_speed, yaw_diff * 2))
+                        cmd_vel.linear.x = 0.0
+                        self.get_logger().info(f"TURNING RIGHT 2: {math.degrees(yaw_diff):.1f}° remaining")
+                    else:
+                        self.turn_count = 2
+                        self.get_logger().info(f"COMPLETED RIGHT TURN 2. TURN COUNT: {self.turn_count}")
+                        self.state = 'MOVE_FORWARD_3'
+                        self.start_time = time.time()
+                        self.get_logger().info("MOVING FORWARD - SEGMENT 3")
+
+                elif self.state == 'MOVE_FORWARD_3':
+                    # Move forward for third segment
+                    cmd_vel.linear.x = self.linear_speed
+                    cmd_vel.angular.z = 0.0
+                    self.get_logger().info("MOVING FORWARD - SEGMENT 3")
+                    
+                    elapsed = time.time() - self.start_time
+                    if elapsed > self.forward_duration:
+                        self.state = 'TURN_RIGHT_3'
+                        self.initial_yaw = self.current_yaw
+                        self.turn_start_time = time.time()
+                        self.get_logger().info("COMPLETED FORWARD 3 - PREPARING TO TURN RIGHT")
+
+                elif self.state == 'TURN_RIGHT_3':
+                    # Turn right using IMU feedback for precise 90-degree turn
+                    target_yaw = self.initial_yaw - math.pi/2  # 90 degrees right
+                    yaw_diff = self.get_yaw_difference(target_yaw, self.current_yaw)
+                    
+                    if abs(yaw_diff) > 0.1:
+                        cmd_vel.angular.z = -min(self.angular_speed, max(-self.angular_speed, yaw_diff * 2))
+                        cmd_vel.linear.x = 0.0
+                        self.get_logger().info(f"TURNING RIGHT 3: {math.degrees(yaw_diff):.1f}° remaining")
+                    else:
+                        self.turn_count = 3
+                        self.get_logger().info(f"COMPLETED RIGHT TURN 3. TURN COUNT: {self.turn_count}")
+                        self.state = 'FIND_GAP_LEFT'
+                        self.get_logger().info("LOOKING FOR GAP ON LEFT OR RIGHT")
+
+                elif self.state == 'FIND_GAP_LEFT':
+                    # Look for gap on left or right side
+                    # Move forward while checking for gaps
+                    cmd_vel.linear.x = self.linear_speed
+                    cmd_vel.angular.z = 0.0
+                    self.get_logger().info("MOVING FORWARD LOOKING FOR GAPS")
+                    
+                    # Check for gaps using TOF sensors
+                    if right_dist > self.min_gap_distance:
+                        # Gap detected on right, turn right
                         self.state = 'TURN_RIGHT_GAP'
                         self.initial_yaw = self.current_yaw
                         self.turn_start_time = time.time()
-                        self.get_logger().info("GAP FOUND IN RIGHT WALL, TURNING RIGHT AGAIN")
+                        self.get_logger().info("GAP DETECTED ON RIGHT - TURNING RIGHT")
+                    elif left_dist > self.min_gap_distance:
+                        # Gap detected on left, turn left
+                        self.state = 'TURN_LEFT_GAP'
+                        self.initial_yaw = self.current_yaw
+                        self.turn_start_time = time.time()
+                        self.get_logger().info("GAP DETECTED ON LEFT - TURNING LEFT")
                     else:
-                        # Obstacle ahead
-                        cmd_vel.linear.x = 0.0
-                        cmd_vel.angular.z = 0.0
+                        # Continue moving forward
+                        pass
 
                 elif self.state == 'TURN_RIGHT_GAP':
                     # Turn right into the gap using IMU feedback
@@ -409,30 +398,11 @@ class NavigationNode(Node):
                         cmd_vel.angular.z = -min(self.angular_speed, max(-self.angular_speed, yaw_diff * 2))
                         cmd_vel.linear.x = 0.0
                     else:
-                        self.state = 'FIND_GAP_LEFT'
-                        self.get_logger().info("TURNED INTO RIGHT GAP, NOW LOOKING FOR LEFT GAP")
+                        self.state = 'FIND_SQUARE'
+                        self.get_logger().info("TURNED INTO RIGHT GAP - LOOKING FOR SQUARE")
 
-                elif self.state == 'FIND_GAP_LEFT':
-                    # Look for gap on left side of maze
-                    if left_dist > self.min_gap_distance and front_dist > 0.5:
-                        cmd_vel.linear.x = self.linear_speed
-                        wall_correction = self.calculate_wall_follow_correction()
-                        edge_correction = self.calculate_edge_center_correction()
-                        cmd_vel.angular.z = wall_correction + edge_correction * 0.5
-                        self.get_logger().info("MOVING FORWARD IN MAZE WITH CENTERING, LOOKING FOR LEFT GAP")
-                    elif left_dist <= self.min_gap_distance:
-                        # Found gap on left, turn left to find package
-                        self.state = 'TURN_LEFT_PACKAGE'
-                        self.initial_yaw = self.current_yaw
-                        self.turn_start_time = time.time()
-                        self.get_logger().info("GAP FOUND ON LEFT, TURNING LEFT FOR PACKAGE")
-                    else:
-                        # Obstacle ahead
-                        cmd_vel.linear.x = 0.0
-                        cmd_vel.angular.z = 0.0
-
-                elif self.state == 'TURN_LEFT_PACKAGE':
-                    # Turn left to go toward package using IMU feedback
+                elif self.state == 'TURN_LEFT_GAP':
+                    # Turn left into the gap using IMU feedback
                     target_yaw = self.initial_yaw + math.pi/2  # 90 degrees left
                     yaw_diff = self.get_yaw_difference(target_yaw, self.current_yaw)
                     
@@ -440,8 +410,22 @@ class NavigationNode(Node):
                         cmd_vel.angular.z = min(self.angular_speed, max(-self.angular_speed, yaw_diff * 2))
                         cmd_vel.linear.x = 0.0
                     else:
+                        self.state = 'FIND_SQUARE'
+                        self.get_logger().info("TURNED INTO LEFT GAP - LOOKING FOR SQUARE")
+
+                elif self.state == 'FIND_SQUARE':
+                    # Move forward while looking for square
+                    cmd_vel.linear.x = self.linear_speed * 0.5  # Slower speed for better detection
+                    cmd_vel.angular.z = 0.0
+                    self.get_logger().info("MOVING FORWARD - LOOKING FOR 40x40MM SQUARE")
+                    
+                    # Check if square is detected
+                    if self.square_detected and self.alignment != "NONE":
                         self.package_found = True
-                        self.get_logger().info("PACKAGE FOUND - TASK COMPLETION INITIATED!")
+                        self.get_logger().info("40x40MM SQUARE DETECTED - PACKAGE FOUND!")
+                    else:
+                        # Continue looking for square
+                        pass
 
         # Publish command
         self.cmd_vel_pub.publish(cmd_vel)
