@@ -26,7 +26,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-           'edge_node = maze_nav_system.edge_detection_node:main',
+           'edge_node = maze_nav_system.edge_detection:main',
         ],
     },
 )

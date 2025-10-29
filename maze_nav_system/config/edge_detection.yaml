@@ -1,0 +1,32 @@
+edge_detection:            # must match the node name in the launch file
+  ros__parameters:
+    # Preprocess / Canny
+    gaussian_k: [5, 5]
+    sigmaX: 1.0
+    lower_thresh: 60       # was 50; a bit stricter against noise
+    upper_thresh: 160      # was 150
+
+    # Hough (used if use_fitline=false)
+    hough_threshold: 30
+    min_line_length: 60
+    max_line_gap: 25
+
+    # Bottom-of-image focus (0.70–0.85 typical)
+    wall_bottom_region: 0.78
+
+    # Triangular ROIs (bottom “toes” of the triangles)
+    left_roi_frac: 0.44
+    right_roi_frac: 0.56
+
+    # Robust single-line fit per side (recommended)
+    use_fitline: true
+    min_points: 120
+    force_both_points_in_roi: true
+
+    # Post-processing
+    morph_close: true
+    ema: 0.72              # smoothing (0..1); higher = steadier
+
+    # I/O
+    input_topic: "/camera/image_raw"
+    publish_compressed: false
