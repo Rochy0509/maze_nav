@@ -8,6 +8,31 @@
 #include <iostream>
 #include <limits>
 
+LibSerial::BaudRate get_baud_rate(int rate) {
+    switch(rate) {
+        case 9600:    return LibSerial::BaudRate::BAUD_9600;
+        case 19200:   return LibSerial::BaudRate::BAUD_19200;
+        case 38400:   return LibSerial::BaudRate::BAUD_38400;
+        case 57600:   return LibSerial::BaudRate::BAUD_57600;
+        case 115200:  return LibSerial::BaudRate::BAUD_115200;
+        case 230400:  return LibSerial::BaudRate::BAUD_230400;
+        case 460800:  return LibSerial::BaudRate::BAUD_460800;
+        case 500000:  return LibSerial::BaudRate::BAUD_500000;
+        case 576000:  return LibSerial::BaudRate::BAUD_576000;
+        case 921600:  return LibSerial::BaudRate::BAUD_921600;
+        case 1000000: return LibSerial::BaudRate::BAUD_1000000;
+        case 1152000: return LibSerial::BaudRate::BAUD_1152000;
+        case 1500000: return LibSerial::BaudRate::BAUD_1500000;
+        case 2000000: return LibSerial::BaudRate::BAUD_2000000;
+        case 2500000: return LibSerial::BaudRate::BAUD_2500000;
+        case 3000000: return LibSerial::BaudRate::BAUD_3000000;
+        case 3500000: return LibSerial::BaudRate::BAUD_3500000;
+        case 4000000: return LibSerial::BaudRate::BAUD_4000000;
+        default:
+            throw std::invalid_argument("Unsupported baud rate: " + std::to_string(rate));
+    }
+}
+
 SerialBridge::SerialBridge(const std::string & node_name) 
 : Node("arduino_bridge"), serial_()
 {
@@ -15,11 +40,13 @@ SerialBridge::SerialBridge(const std::string & node_name)
     this->declare_parameter<int>("baud_rate", 115200);
 
     std::string port_name = this->get_parameter("serial_port").as_string();
-    int baud_rate = this->get_parameter("baud_rate").as_int();
+    int baud_rate_int = this->get_parameter("baud_rate").as_int();
+   
 
     try{
         serial_.Open(port_name);
-        serial_.SetBaudRate(static_cast<LibSerial::BaudRate>(baud_rate));
+         LibSerial::BaudRate baud_rate = get_baud_rate(baud_rate_int);
+        serial_.SetBaudRate(baud_rate);
         serial_.SetCharacterSize(LibSerial::CharacterSize::CHAR_SIZE_8);
         serial_.SetParity(LibSerial::Parity::PARITY_NONE);
         serial_.SetStopBits(LibSerial::StopBits::STOP_BITS_1);
