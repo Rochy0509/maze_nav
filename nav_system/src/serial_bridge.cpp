@@ -41,24 +41,30 @@ SerialBridge::SerialBridge(const std::string & node_name)
 
     std::string port_name = this->get_parameter("serial_port").as_string();
     int baud_rate_int = this->get_parameter("baud_rate").as_int();
-   
 
     try{
         serial_.Open(port_name);
-         LibSerial::BaudRate baud_rate = get_baud_rate(baud_rate_int);
+        
+        LibSerial::BaudRate baud_rate = get_baud_rate(baud_rate_int);
         serial_.SetBaudRate(baud_rate);
+        
         serial_.SetCharacterSize(LibSerial::CharacterSize::CHAR_SIZE_8);
         serial_.SetParity(LibSerial::Parity::PARITY_NONE);
         serial_.SetStopBits(LibSerial::StopBits::STOP_BITS_1);
         serial_.SetFlowControl(LibSerial::FlowControl::FLOW_CONTROL_NONE);
-        RCLCPP_INFO(this->get_logger(), "Serial port opened: %s at %d baud", port_name.c_str(), baud_rate);  // Fixed message
+        
+        RCLCPP_INFO(this->get_logger(), "Serial port opened: %s at %d baud", 
+                    port_name.c_str(), baud_rate_int);
+    } catch (const std::invalid_argument& e) {
+        RCLCPP_ERROR(this->get_logger(), "Baud rate error: %s", e.what());
+        return;
     } catch (const LibSerial::NotOpen &e){
         RCLCPP_ERROR(this->get_logger(), "Serial error: %s", e.what());
         return;
     }
 
     imu_raw_pub_ = this->create_publisher<sensor_msgs::msg::Imu>("imu/raw", 10);
-    odom_raw_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom/", 10);
+    odom_raw_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
     tof_front_pub_ = this->create_publisher<sensor_msgs::msg::Range>("tof/front", 10);
     tof_left_pub_ = this->create_publisher<sensor_msgs::msg::Range>("tof/left", 10);
     tof_right_pub_ = this->create_publisher<sensor_msgs::msg::Range>("tof/right", 10);
@@ -123,27 +129,22 @@ void SerialBridge::process_line(const std::string& line)
         if (json.contains("imu_raw")) {
             auto& arr = json["imu_raw"];
             if (arr.size() >= 9) {
-                // Accelerometer: g → m/s²
                 double ax = arr[0].get<double>() * 9.80665;
                 double ay = arr[1].get<double>() * 9.80665;
                 double az = arr[2].get<double>() * 9.80665;
 
-                // Gyroscope: deg/s → rad/s
                 double gx = arr[3].get<double>() * M_PI / 180.0;
                 double gy = arr[4].get<double>() * M_PI / 180.0;
                 double gz = arr[5].get<double>() * M_PI / 180.0;
 
-                // Magnetometer: µT
                 float mx = arr[6].get<float>();
                 float my = arr[7].get<float>();
                 float mz = arr[8].get<float>();
 
-                // === Publish IMU 
                 auto imu_msg = sensor_msgs::msg::Imu();
                 imu_msg.header.stamp = this->now();
                 imu_msg.header.frame_id = "imu_link";
 
-                // No orientation
                 imu_msg.orientation.w = 1.0;
                 imu_msg.orientation.x = imu_msg.orientation.y = imu_msg.orientation.z = 0.0;
                 imu_msg.orientation_covariance.fill(-1); 
@@ -160,7 +161,6 @@ void SerialBridge::process_line(const std::string& line)
 
                 imu_raw_pub_->publish(imu_msg);
 
-                // Publish Magnetometer
                 auto mag_msg = sensor_msgs::msg::MagneticField();
                 mag_msg.header.stamp = this->now();
                 mag_msg.header.frame_id = "imu_link";
@@ -176,7 +176,6 @@ void SerialBridge::process_line(const std::string& line)
             }
         }
 
-        // Encoder parsing
         else if (json.contains("enc")) {
             auto& arr = json["enc"];
             if (arr.size() >= 4) {
@@ -198,7 +197,7 @@ void SerialBridge::process_line(const std::string& line)
                 last_left_rot = left_rot;
                 last_right_rot = right_rot;
 
-                const double WHEEL_BASE = 0.074; // meters
+                const double WHEEL_BASE = 0.074;
 
                 double d_center = (dl + dr) / 2.0;
                 double d_theta = (dr - dl) / WHEEL_BASE;
@@ -217,14 +216,12 @@ void SerialBridge::process_line(const std::string& line)
                 msg.pose.pose.position.z = 0.0;
 
                 tf2::Quaternion q;
-                q.setRPY(0, 0, theta); // roll=0, pitch=0, yaw=theta
+                q.setRPY(0, 0, theta);
                 msg.pose.pose.orientation = tf2::toMsg(q);
 
-                // Zero velocity (optional)
                 msg.twist.twist.linear.x = 0.0;
                 msg.twist.twist.angular.z = 0.0;
 
-                // Covariances
                 msg.pose.covariance.fill(0.0);
                 msg.twist.covariance.fill(-1);
 
@@ -233,7 +230,6 @@ void SerialBridge::process_line(const std::string& line)
             }
         }
         
-        // === ToF parsing: complete it ===
         else if (json.contains("tof")) {
             auto& arr = json["tof"];
             if (arr.size() >= 3) {
@@ -246,9 +242,9 @@ void SerialBridge::process_line(const std::string& line)
                     msg.header.stamp = this->now();
                     msg.header.frame_id = frame;
                     msg.radiation_type = sensor_msgs::msg::Range::INFRARED;
-                    msg.field_of_view = 0.1;   // rad
-                    msg.min_range = 0.02f;     // 2 cm
-                    msg.max_range = 2.0f;      // 2 m
+                    msg.field_of_view = 0.1;
+                    msg.min_range = 0.02f;
+                    msg.max_range = 2.0f;
                     msg.range = (dist_cm <= 0 || dist_cm > 400) ? 
                         std::numeric_limits<float>::quiet_NaN() : 
                         dist_cm / 100.0f;

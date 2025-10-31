@@ -13,7 +13,7 @@ RobotController::RobotController(const std::string & node_name)
 
     // Subscribers
     odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-        "odom/filtered", 10, std::bind(&RobotController::odomCallback, this, std::placeholders::_1));
+        "/odom_filtered", 10, std::bind(&RobotController::odomCallback, this, std::placeholders::_1));
     
     imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
         "imu/data", 10, std::bind(&RobotController::imuCallback, this, std::placeholders::_1));

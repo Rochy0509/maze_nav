@@ -36,7 +36,7 @@ def generate_launch_description():
                 {'use_sim_time': False}
             ],
             remappings=[
-                ('odometry/filtered', '/odom')  
+                ('odometry/filtered', '/odom_filtered')  
             ]
         )
     ])
