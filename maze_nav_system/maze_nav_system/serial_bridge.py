@@ -102,14 +102,19 @@ class SerialBridge(Node):
             return
         try:
             while True:
-                line = self.serial.readline()  # reads up to \n or times out
-                if not line:
+                raw = self.serial.readline()
+                if not raw:
                     break
-                line = line.decode('utf-8', errors='ignore').rstrip('\r\n')
-                if line:
+                line = raw.decode('utf-8', errors='ignore').strip()  # trims blanks
+                if not line or not line.startswith('{'):
+                    # ignore whitespace, boot messages, or any non-JSON line
+                    continue
+                try:
                     self.process_line(line)
+                except json.JSONDecodeError as e:
+                    self.get_logger().warn(f"JSON drop (not valid): {e.msg}")
         except Exception as e:
-            self.get_logger().warn(f'Serial read error: {e}')
+            self.get_logger().warn(f"Serial read error: {e}")
 
     # ---- Helpers ----
 

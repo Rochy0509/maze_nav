@@ -25,13 +25,12 @@ def generate_launch_description():
             executable='imu_filter_madgwick_node',
             name='imu_filter',
             output='screen',
-            parameters=[{
-                'use_mag': True,
-                'publish_tf': False,
-                'world_frame': 'enu',
-                'imu_topic': '/imu/raw',   
-                'mag_topic': '/imu/mag',  
-            }]
+            parameters=[{'use_mag': True, 'world_frame': 'enu', 'publish_tf': False}],
+            remappings=[
+                ('/imu/data_raw', '/imu/raw'),
+                ('/imu/mag', '/imu/mag'),
+                ('/imu/data', '/imu/data'),
+            ]
         ),
 
         # EKF for localization
