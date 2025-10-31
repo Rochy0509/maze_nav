@@ -90,10 +90,13 @@ class SerialBridge(Node):
 
     def _cmd_vel_cb(self, msg: Twist):
         if not self.serial or not self.serial.is_open:
+            self.get_logger().warn('Serial not open!')  # ADD THIS
             return
         try:
             cmd_str = f'{{"cmd":[{msg.linear.x:.3f},{msg.linear.y:.3f},{msg.angular.z:.3f}]}}\n'
+            self.get_logger().info(f'TX: {cmd_str.strip()}')  # ADD THIS - see what's being sent
             self.serial.write(cmd_str.encode('utf-8'))
+            self.serial.flush()  # ADD THIS - ensure it's sent immediately
         except Exception as e:
             self.get_logger().warn(f'Serial write error: {e}')
 
