@@ -27,7 +27,9 @@ setup(
     entry_points={
         'console_scripts': [
            'edge_node = maze_nav_system.edge_detection:main',
-           'navigation_node = maze_nav_system.navigation_node:main',
+           'robot_controller = maze_nav_system.robot_controller:main',
+           'serial_bridge = maze_nav_system.serial_bridge:main',
+
         ],
     },
 )

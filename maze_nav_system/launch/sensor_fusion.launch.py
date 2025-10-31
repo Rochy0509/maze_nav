@@ -5,10 +5,12 @@ import os
 
 def generate_launch_description():
 
-    nav_system_dir = get_package_share_directory('nav_system')
-    ekf_config = os.path.join(nav_system_dir, 'config', 'ekf.yaml')
+    # Use the maze_nav_system package for shared config paths
+    maze_nav_system_dir = get_package_share_directory('maze_nav_system')
+    ekf_config = os.path.join(maze_nav_system_dir, 'config', 'ekf.yaml')
+
     return LaunchDescription([
-        
+        # IMU filter (Madgwick)
         Node(
             package='imu_filter_madgwick',
             executable='imu_filter_component',
@@ -21,11 +23,12 @@ def generate_launch_description():
                 'gain': 0.01,
                 'zeta': 0.0,
                 'fixed_frame': 'odom',
-                'imu_topic': '/imu_raw',
+                'imu_topic': '/imu/raw',
                 'mag_topic': '/imu/mag',
             }]
         ),
-        
+
+        # EKF (Robot Localization)
         Node(
             package='robot_localization',
             executable='ekf_node',
@@ -36,7 +39,7 @@ def generate_launch_description():
                 {'use_sim_time': False}
             ],
             remappings=[
-                ('odometry/filtered', '/odom_filtered')  
+                ('odometry/filtered', '/odom_filtered')
             ]
-        )
+        ),
     ])
