@@ -53,7 +53,7 @@ class SerialBridge(Node):
                 xonxoff=False,
                 rtscts=False,
                 dsrdtr=False,
-                timeout=0  # non-blocking
+                timeout=1.0  # non-blocking
             )
             self.get_logger().info(f'Serial port opened: {port_name} at {baud} baud')
         except ValueError as e:
@@ -100,27 +100,15 @@ class SerialBridge(Node):
     def timer_callback(self):
         if not self.serial or not self.serial.is_open:
             return
-
         try:
-            # Read whatever is available (non-blocking)
-            available = self.serial.in_waiting
-            if available > 0:
-                data = self.serial.read(available)
-                if data:
-                    self._rx_buffer += data.decode('utf-8', errors='ignore')
-
-            # Process complete lines
             while True:
-                nl_index = self._rx_buffer.find('\n')
-                if nl_index == -1:
+                line = self.serial.readline()  # reads up to \n or times out
+                if not line:
                     break
-                line = self._rx_buffer[:nl_index].rstrip('\r')
-                self._rx_buffer = self._rx_buffer[nl_index + 1:]
+                line = line.decode('utf-8', errors='ignore').rstrip('\r\n')
                 if line:
                     self.process_line(line)
-
         except Exception as e:
-            # (No throttle helper in rclpy; single-line warn here)
             self.get_logger().warn(f'Serial read error: {e}')
 
     # ---- Helpers ----
